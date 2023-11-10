@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<AssemblyName>Pty.Net</AssemblyName>
+		<GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+		<TargetFramework>netstandard2.0</TargetFramework>
+	</PropertyGroup>
+	<PropertyGroup>
+		<LangVersion>11.0</LangVersion>
+		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+		<PackageId>Quick.PtyNet</PackageId>
+		<Version>1.0.1-preview1</Version>
+		<PackageProjectUrl>https://github.com/aaasoft/Quick.PtyNet</PackageProjectUrl>
+	</PropertyGroup>
+</Project>
