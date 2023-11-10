@@ -11,4 +11,7 @@
 		<Version>1.0.1-preview1</Version>
 		<PackageProjectUrl>https://github.com/aaasoft/Quick.PtyNet</PackageProjectUrl>
 	</PropertyGroup>
+	<ItemGroup>
+	  <PackageReference Include="Quick.PtyNet.WinPty" Version="1.0.0" />
+	</ItemGroup>
 </Project>
