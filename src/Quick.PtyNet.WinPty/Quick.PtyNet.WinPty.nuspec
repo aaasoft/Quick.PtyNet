@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2013/01/nuspec.xsd">
   <metadata>
     <id>Quick.PtyNet.WinPty</id>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <authors>rprichard</authors>
     <owners>rprichard</owners>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
