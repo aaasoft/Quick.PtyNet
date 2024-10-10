@@ -6,6 +6,7 @@ namespace Pty.Net.Linux
     using System;
     using System.Collections.Generic;
     using System.Diagnostics;
+    using System.Linq;
     using System.Runtime.InteropServices;
     using System.Threading;
     using System.Threading.Tasks;
@@ -19,6 +20,26 @@ namespace Pty.Net.Linux
         /// <inheritdoc/>
         public override Task<IPtyConnection> StartTerminalAsync(PtyOptions options, TraceSource trace, CancellationToken cancellationToken)
         {
+            //Check DOTNET_EnableWriteXorExecute on other platform except Windows.
+            if (!System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                var DOTNET_EnableWriteXorExecute = Environment.GetEnvironmentVariable("DOTNET_EnableWriteXorExecute");
+                var runtimeVersion = Version.Parse(System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription.Split(' ').Last());
+                if (runtimeVersion.Major > 6)
+                {
+                    if (DOTNET_EnableWriteXorExecute == null || DOTNET_EnableWriteXorExecute != "0")
+                    {
+                        throw new ApplicationException("You must set enviroment: DOTNET_EnableWriteXorExecute=0");
+                    }
+                }
+                else
+                {
+                    if (DOTNET_EnableWriteXorExecute != null && DOTNET_EnableWriteXorExecute != "0")
+                    {
+                        throw new ApplicationException("You must set enviroment: DOTNET_EnableWriteXorExecute=0");
+                    }
+                }
+            }
             var winSize = new WinSize((ushort)options.Rows, (ushort)options.Cols);
 
             string?[] terminalArgs = GetExecvpArgs(options);
