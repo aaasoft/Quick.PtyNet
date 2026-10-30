@@ -15,39 +15,66 @@ namespace Pty.Net.Windows
     /// when it was created, instead of re-opening the process by pid.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// A handle that was open before the process exited keeps the process object alive, so its
-    /// exit code stays readable after the exit. <see cref="System.Diagnostics.Process.GetProcessById(int)"/>
-    /// has no such guarantee: it throws <see cref="ArgumentException"/> once the pid is gone, which
-    /// is exactly what happens when a short-lived child finishes before the connection is set up.
+    /// exit code stays readable after the exit. Re-opening by pid with
+    /// <see cref="System.Diagnostics.Process.GetProcessById(int)"/> has no such guarantee: once a
+    /// short-lived child has finished, the lookup (or arming its Exited event) throws.
+    /// </para>
+    /// <para>
+    /// The watcher owns a duplicate of the spawn handle, independent of the connection's own copy,
+    /// and keeps it until the exit has been observed. Exit code and the exit callback therefore
+    /// stay available after the connection is disposed, as they were with the
+    /// <see cref="System.Diagnostics.Process"/> object this replaces.
+    /// </para>
     /// </remarks>
-    internal sealed class ProcessExitWatcher : IDisposable
+    internal sealed class ProcessExitWatcher
     {
         private readonly SafeProcessHandle processHandle;
+        private readonly ProcessWaitHandle processWaitHandle;
         private readonly Action<int> onExited;
         private readonly object exitLock = new object();
-        private readonly ProcessWaitHandle processWaitHandle;
-        private readonly RegisteredWaitHandle registration;
+        private RegisteredWaitHandle? registration;
         private int exitCode;
         private bool hasExited;
-        private bool disposed;
+        private bool released;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="ProcessExitWatcher"/> class.
         /// </summary>
-        /// <param name="processHandle">The handle returned when the process was created. The watcher does not take ownership of it.</param>
+        /// <param name="spawnHandle">The handle returned when the process was created. It is duplicated; the caller keeps ownership of it.</param>
         /// <param name="onExited">Invoked once, on a thread pool thread, with the exit code. May run before the constructor returns if the process has already exited.</param>
-        public ProcessExitWatcher(SafeProcessHandle processHandle, Action<int> onExited)
+        public ProcessExitWatcher(SafeProcessHandle spawnHandle, Action<int> onExited)
         {
-            this.processHandle = processHandle;
-            this.onExited = onExited;
+            IntPtr self = GetCurrentProcess();
+            if (!DuplicateHandle(self, spawnHandle, self, out SafeProcessHandle ownHandle, 0, false, DUPLICATE_SAME_ACCESS))
+            {
+                throw new Win32Exception();
+            }
 
-            this.processWaitHandle = new ProcessWaitHandle(processHandle);
-            this.registration = ThreadPool.RegisterWaitForSingleObject(
+            this.processHandle = ownHandle;
+            this.onExited = onExited;
+            this.processWaitHandle = new ProcessWaitHandle(ownHandle);
+
+            RegisteredWaitHandle waitRegistration = ThreadPool.RegisterWaitForSingleObject(
                 this.processWaitHandle,
                 this.OnSignaled,
                 null,
                 Timeout.Infinite,
                 executeOnlyOnce: true);
+
+            lock (this.exitLock)
+            {
+                if (this.released)
+                {
+                    // The process had already exited and the callback ran before we got here.
+                    waitRegistration.Unregister(null);
+                }
+                else
+                {
+                    this.registration = waitRegistration;
+                }
+            }
         }
 
         /// <summary>
@@ -85,11 +112,21 @@ namespace Pty.Net.Windows
                 }
             }
 
-            uint result = WaitForSingleObject(this.processHandle, milliseconds < 0 ? INFINITE : (uint)milliseconds);
+            uint result;
+            try
+            {
+                result = WaitForSingleObject(this.processHandle, milliseconds < 0 ? INFINITE : (uint)milliseconds);
+            }
+            catch (ObjectDisposedException)
+            {
+                // The handle is released only after the exit has been recorded.
+                return true;
+            }
+
             switch (result)
             {
                 case WAIT_OBJECT_0:
-                    this.ReadExitCode();
+                    this.RecordExit();
                     return true;
                 case WAIT_TIMEOUT:
                     return false;
@@ -108,38 +145,26 @@ namespace Pty.Net.Windows
                 return;
             }
 
-            if (!TerminateProcess(this.processHandle, unchecked((uint)-1)))
+            bool terminated;
+            int error;
+            try
             {
-                int error = Marshal.GetLastWin32Error();
+                terminated = TerminateProcess(this.processHandle, unchecked((uint)-1));
+                error = Marshal.GetLastWin32Error();
+            }
+            catch (ObjectDisposedException)
+            {
+                return;
+            }
 
-                // The process may have exited between the check above and the call.
-                if (this.WaitForExit(0))
-                {
-                    return;
-                }
-
+            // TerminateProcess fails with access denied if the process exited in the meantime.
+            if (!terminated && !this.WaitForExit(0))
+            {
                 throw new Win32Exception(error);
             }
         }
 
-        /// <inheritdoc/>
-        public void Dispose()
-        {
-            lock (this.exitLock)
-            {
-                if (this.disposed)
-                {
-                    return;
-                }
-
-                this.disposed = true;
-            }
-
-            this.registration.Unregister(null);
-            this.processWaitHandle.Dispose();
-        }
-
-        private void ReadExitCode()
+        private void RecordExit()
         {
             lock (this.exitLock)
             {
@@ -160,35 +185,27 @@ namespace Pty.Net.Windows
 
         private void OnSignaled(object? state, bool timedOut)
         {
+            this.RecordExit();
+
             int code;
             lock (this.exitLock)
             {
-                if (this.disposed)
-                {
-                    return;
-                }
+                code = this.exitCode;
+                this.released = true;
+                this.registration?.Unregister(null);
+                this.registration = null;
             }
 
-            try
-            {
-                this.ReadExitCode();
-                lock (this.exitLock)
-                {
-                    code = this.exitCode;
-                }
-            }
-            catch (ObjectDisposedException)
-            {
-                // The connection was disposed while the exit was being observed.
-                return;
-            }
+            // Nothing waits on the handle any more and the exit code is cached.
+            this.processWaitHandle.Dispose();
+            this.processHandle.Dispose();
 
             this.onExited(code);
         }
 
         /// <summary>
-        /// A process handle is a waitable kernel object. This wraps it, without taking ownership,
-        /// so the thread pool can wait on it; the process handle stays owned by the connection.
+        /// A process handle is a waitable kernel object. This wraps the watcher's handle, without
+        /// taking ownership, so the thread pool can wait on it.
         /// </summary>
         private sealed class ProcessWaitHandle : WaitHandle
         {

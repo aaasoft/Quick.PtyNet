@@ -60,7 +60,6 @@ namespace Pty.Net.Windows
             this.ReaderStream?.Dispose();
             this.WriterStream?.Dispose();
 
-            this.exitWatcher.Dispose();
             this.processHandle.Close();
             winpty_free(this.handle);
         }

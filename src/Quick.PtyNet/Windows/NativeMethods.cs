@@ -55,6 +55,22 @@ namespace Pty.Net.Windows
         [DllImport("kernel32.dll", SetLastError = true)]
         internal static extern bool TerminateProcess(SafeProcessHandle hProcess, uint uExitCode);
 
+        internal const uint DUPLICATE_SAME_ACCESS = 0x00000002;
+
+        [DllImport("kernel32.dll")]
+        internal static extern IntPtr GetCurrentProcess();
+
+        [return: MarshalAs(UnmanagedType.Bool)]
+        [DllImport("kernel32.dll", SetLastError = true)]
+        internal static extern bool DuplicateHandle(
+            IntPtr hSourceProcessHandle,
+            SafeProcessHandle hSourceHandle,
+            IntPtr hTargetProcessHandle,
+            out SafeProcessHandle lpTargetHandle,
+            uint dwDesiredAccess,
+            [MarshalAs(UnmanagedType.Bool)] bool bInheritHandle,
+            uint dwOptions);
+
         [return: MarshalAs(UnmanagedType.Bool)]
         [DllImport("kernel32.dll", SetLastError = true)]
         [ReliabilityContract(Consistency.WillNotCorruptState, Cer.Success)]

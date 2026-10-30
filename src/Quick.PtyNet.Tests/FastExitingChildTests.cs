@@ -20,6 +20,8 @@ namespace Pty.Net.Tests
     /// when it is the first pty spawned in the test host, i.e. when run on its own:
     /// <c>dotnet test --filter FullyQualifiedName~FastExitingChildTests</c>.
     /// In a host that has already spawned a pty it passes even on the unfixed code.
+    /// The command lines are verbatim and include the program name, because the WinPTY path
+    /// passes <see cref="PtyOptions.CommandLine"/> to the child as its complete command line.
     /// </remarks>
     public class FastExitingChildTests
     {
@@ -33,7 +35,8 @@ namespace Pty.Net.Tests
                 Rows = 25,
                 Cwd = Environment.CurrentDirectory,
                 App = Path.Combine(Environment.SystemDirectory, "cmd.exe"),
-                CommandLine = new[] { "/c", "exit 3" },
+                CommandLine = new[] { "cmd.exe", "/c", "exit 3" },
+                VerbatimCommandLine = true,
                 ForceWinPty = true,
             };
 
@@ -57,7 +60,8 @@ namespace Pty.Net.Tests
                 Rows = 25,
                 Cwd = Environment.CurrentDirectory,
                 App = Path.Combine(Environment.SystemDirectory, "cmd.exe"),
-                CommandLine = new[] { "/c", "ping -n 2 127.0.0.1 >nul & exit 3" },
+                CommandLine = new[] { "cmd.exe", "/c", "ping -n 2 127.0.0.1 >nul & exit 3" },
+                VerbatimCommandLine = true,
                 ForceWinPty = true,
             };
 
@@ -86,7 +90,8 @@ namespace Pty.Net.Tests
                 Rows = 25,
                 Cwd = Environment.CurrentDirectory,
                 App = Path.Combine(Environment.SystemDirectory, "cmd.exe"),
-                CommandLine = new[] { "/c", "ping -n 30 127.0.0.1 >nul" },
+                CommandLine = new[] { "cmd.exe", "/c", "ping -n 30 127.0.0.1 >nul" },
+                VerbatimCommandLine = true,
                 ForceWinPty = true,
             };
 

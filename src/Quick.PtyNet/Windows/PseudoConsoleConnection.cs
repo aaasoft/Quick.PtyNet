@@ -54,7 +54,6 @@ namespace Pty.Net.Windows
             this.ReaderStream?.Dispose();
             this.WriterStream?.Dispose();
 
-            this.exitWatcher.Dispose();
             if (this.handles != null)
             {
                 this.handles.PseudoConsoleHandle.Close();
