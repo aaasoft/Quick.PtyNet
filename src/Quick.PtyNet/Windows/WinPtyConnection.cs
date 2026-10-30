@@ -4,7 +4,6 @@
 namespace Pty.Net.Windows
 {
     using System;
-    using System.Diagnostics;
     using System.IO;
     using static Pty.Net.Windows.NativeMethods;
     using static Pty.Net.Windows.WinptyNativeInterop;
@@ -16,7 +15,7 @@ namespace Pty.Net.Windows
     {
         private readonly IntPtr handle;
         private readonly SafeProcessHandle processHandle;
-        private readonly Process process;
+        private readonly ProcessExitWatcher exitWatcher;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="WinPtyConnection"/> class.
@@ -33,9 +32,11 @@ namespace Pty.Net.Windows
 
             this.handle = handle;
             this.processHandle = processHandle;
-            this.process = Process.GetProcessById(this.Pid);
-            this.process.Exited += this.Process_Exited;
-            this.process.EnableRaisingEvents = true;
+
+            // Watch the handle we already hold instead of re-opening the process by pid: a child
+            // that exits before this point (e.g. `cmd /c exit 3` on a cold first spawn) is no
+            // longer resolvable by pid, but its exit code is still readable through the handle.
+            this.exitWatcher = new ProcessExitWatcher(processHandle, this.OnProcessExited);
         }
 
         /// <inheritdoc/>
@@ -51,7 +52,7 @@ namespace Pty.Net.Windows
         public int Pid { get; }
 
         /// <inheritdoc/>
-        public int ExitCode => this.process.ExitCode;
+        public int ExitCode => this.exitWatcher.ExitCode;
 
         /// <inheritdoc/>
         public void Dispose()
@@ -59,6 +60,7 @@ namespace Pty.Net.Windows
             this.ReaderStream?.Dispose();
             this.WriterStream?.Dispose();
 
+            this.exitWatcher.Dispose();
             this.processHandle.Close();
             winpty_free(this.handle);
         }
@@ -66,7 +68,7 @@ namespace Pty.Net.Windows
         /// <inheritdoc/>
         public void Kill()
         {
-            this.process.Kill();
+            this.exitWatcher.Kill();
         }
 
         /// <inheritdoc/>
@@ -78,12 +80,12 @@ namespace Pty.Net.Windows
         /// <inheritdoc/>
         public bool WaitForExit(int milliseconds)
         {
-            return this.process.WaitForExit(milliseconds);
+            return this.exitWatcher.WaitForExit(milliseconds);
         }
 
-        private void Process_Exited(object sender, EventArgs e)
+        private void OnProcessExited(int exitCode)
         {
-            this.ProcessExited?.Invoke(this, new PtyExitedEventArgs(this.process.ExitCode));
+            this.ProcessExited?.Invoke(this, new PtyExitedEventArgs(exitCode));
         }
     }
 }

@@ -40,6 +40,21 @@ namespace Pty.Net.Windows
         [DllImport("kernel32.dll")]
         public static extern int GetProcessId(SafeProcessHandle hProcess);
 
+        internal const uint WAIT_OBJECT_0 = 0x00000000;
+        internal const uint WAIT_TIMEOUT = 0x00000102;
+        internal const uint INFINITE = 0xFFFFFFFF;
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        internal static extern uint WaitForSingleObject(SafeProcessHandle hHandle, uint dwMilliseconds);
+
+        [return: MarshalAs(UnmanagedType.Bool)]
+        [DllImport("kernel32.dll", SetLastError = true)]
+        internal static extern bool GetExitCodeProcess(SafeProcessHandle hProcess, out int lpExitCode);
+
+        [return: MarshalAs(UnmanagedType.Bool)]
+        [DllImport("kernel32.dll", SetLastError = true)]
+        internal static extern bool TerminateProcess(SafeProcessHandle hProcess, uint uExitCode);
+
         [return: MarshalAs(UnmanagedType.Bool)]
         [DllImport("kernel32.dll", SetLastError = true)]
         [ReliabilityContract(Consistency.WillNotCorruptState, Cer.Success)]
