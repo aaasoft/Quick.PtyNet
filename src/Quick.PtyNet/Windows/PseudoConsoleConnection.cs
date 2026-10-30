@@ -4,7 +4,6 @@
 namespace Pty.Net.Windows
 {
     using System;
-    using System.Diagnostics;
     using System.IO;
     using System.IO.Pipes;
     using System.Runtime.InteropServices;
@@ -15,7 +14,7 @@ namespace Pty.Net.Windows
     /// </summary>
     internal sealed class PseudoConsoleConnection : IPtyConnection
     {
-        private readonly Process process;
+        private readonly ProcessExitWatcher exitWatcher;
         private PseudoConsoleConnectionHandles handles;
 
         /// <summary>
@@ -28,9 +27,10 @@ namespace Pty.Net.Windows
             this.WriterStream = new AnonymousPipeClientStream(PipeDirection.Out, new Microsoft.Win32.SafeHandles.SafePipeHandle(handles.InPipeOurSide.Handle, ownsHandle: false));
 
             this.handles = handles;
-            this.process = Process.GetProcessById(this.Pid);
-            this.process.Exited += this.Process_Exited;
-            this.process.EnableRaisingEvents = true;
+
+            // Watch the handle CreateProcess returned instead of re-opening the process by pid;
+            // see ProcessExitWatcher for why the pid lookup loses against a fast-exiting child.
+            this.exitWatcher = new ProcessExitWatcher(handles.ProcessHandle, this.OnProcessExited);
         }
 
         /// <inheritdoc/>
@@ -46,7 +46,7 @@ namespace Pty.Net.Windows
         public int Pid => this.handles.Pid;
 
         /// <inheritdoc/>
-        public int ExitCode => this.process.ExitCode;
+        public int ExitCode => this.exitWatcher.ExitCode;
 
         /// <inheritdoc/>
         public void Dispose()
@@ -69,7 +69,7 @@ namespace Pty.Net.Windows
         /// <inheritdoc/>
         public void Kill()
         {
-            this.process.Kill();
+            this.exitWatcher.Kill();
         }
 
         /// <inheritdoc/>
@@ -85,12 +85,12 @@ namespace Pty.Net.Windows
         /// <inheritdoc/>
         public bool WaitForExit(int milliseconds)
         {
-            return this.process.WaitForExit(milliseconds);
+            return this.exitWatcher.WaitForExit(milliseconds);
         }
 
-        private void Process_Exited(object sender, EventArgs e)
+        private void OnProcessExited(int exitCode)
         {
-            this.ProcessExited?.Invoke(this, new PtyExitedEventArgs(this.process.ExitCode));
+            this.ProcessExited?.Invoke(this, new PtyExitedEventArgs(exitCode));
         }
 
         /// <summary>
